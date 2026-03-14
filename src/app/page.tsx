@@ -1,11 +1,16 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Activity, Flame, Lock, CheckCircle2, Edit3, Save, LogOut, Image as ImageIcon, Book, BarChart3, Upload } from 'lucide-react';
+import { 
+  Activity, Flame, Lock, Edit3, Save, LogOut, 
+  Image as ImageIcon, Book, BarChart3, Upload, 
+  Heart, Ghost, Coffee, Moon, CheckCircle2 // <--- ADD THIS
+} from 'lucide-react';
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
-// --- YOUR FIREBASE CONFIG ---
+// --- FIREBASE CONFIG ---
 const firebaseConfig = {
   apiKey: "AIzaSyD3vYfhT9Ukphq2fVbNH5c9bGqGpcsd4sA",
   authDomain: "vault-final.firebaseapp.com",
@@ -17,34 +22,47 @@ const firebaseConfig = {
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
-export default function TimeCapsule() {
+const MOODS = [
+  { id: 'happy', icon: Heart, color: 'text-pink-500', label: 'Radiant' },
+  { id: 'low', icon: Moon, color: 'text-blue-400', label: 'Quiet' },
+  { id: 'missing', icon: Ghost, color: 'text-purple-500', label: 'Missing' },
+  { id: 'tired', icon: Coffee, color: 'text-orange-400', label: 'Tired' }
+];
+
+export default function VaultFinal() {
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [activeTab, setActiveTab] = useState('home'); // home, journal, media, stats
-  const [dbData, setDbData] = useState<any>({ content: "", streak: 0, mediaUrl: "" });
+  const [activeTab, setActiveTab] = useState('home');
+  const [dbData, setDbData] = useState<any>({ content: "", streak: 0, mediaUrl: "", mood: "happy" });
   const [isEditing, setIsEditing] = useState(false);
   const [newNote, setNewNote] = useState("");
-  const [password, setPassword] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   const SECRET_WORD = "Sacrifice";
 
   useEffect(() => {
     if (isAuthorized) {
-      const docRef = doc(db, "vault", "data");
-      return onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setDbData(docSnap.data());
-          setNewNote(docSnap.data().content);
+      const unsubscribe = onSnapshot(doc(db, "vault", "data"), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setDbData(data);
+          setNewNote(data.content || "");
         }
       });
+      return () => unsubscribe();
     }
   }, [isAuthorized]);
 
-  const saveJournalAndIncrementStreak = async () => {
-    const docRef = doc(db, "vault", "data");
-    await updateDoc(docRef, { 
+  const updateMood = async (moodId: string) => {
+    await updateDoc(doc(db, "vault", "data"), { mood: moodId });
+  };
+
+  const saveJournal = async () => {
+    await updateDoc(doc(db, "vault", "data"), { 
       content: newNote,
-      streak: (dbData.streak || 0) + 1, // AUTO-STREAK!
+      streak: (dbData.streak || 0) + 1,
       lastUpdated: serverTimestamp() 
     });
     setIsEditing(false);
@@ -52,14 +70,14 @@ export default function TimeCapsule() {
 
   if (!isAuthorized) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4">
-         <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ repeat: Infinity, duration: 2 }} className="text-red-600 mb-8">
-          <Activity size={60} />
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 p-6">
+        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 2 }} className="text-red-600 mb-12">
+          <Activity size={80} />
         </motion.div>
         <input 
           type="password" 
-          placeholder="ACCESS CODE" 
-          className="bg-transparent border-b border-white/20 text-red-500 outline-none p-2 text-center tracking-widest"
+          placeholder="OVERRIDE KEY" 
+          className="bg-transparent border-b border-slate-800 text-red-500 text-center outline-none w-48 tracking-widest uppercase py-2"
           onChange={(e) => e.target.value.toLowerCase() === SECRET_WORD.toLowerCase() && setIsAuthorized(true)}
         />
       </div>
@@ -67,15 +85,17 @@ export default function TimeCapsule() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 font-mono">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-32 selection:bg-red-500/30">
       {/* HEADER */}
-      <div className="flex justify-between items-center mb-8 border-b border-white/10 pb-4">
-        <h1 className="text-xl font-black tracking-tighter italic">CAPSULE_OS.v3</h1>
-        <button onClick={() => setIsAuthorized(false)} className="text-white/40"><LogOut size={20}/></button>
-      </div>
+      <header className="p-6 flex justify-between items-center border-b border-slate-900 sticky top-0 bg-slate-950/80 backdrop-blur-md z-50">
+        <h1 className="text-lg font-black italic text-red-600 tracking-tighter uppercase">Vault_OS.v3</h1>
+        <div className="flex items-center gap-2 text-slate-400 font-mono text-sm">
+           {dbData.streak} <Flame size={18} className={dbData.streak > 0 ? "text-orange-500" : "text-slate-800"} />
+        </div>
+      </header>
 
-      {/* TAB NAVIGATION */}
-      <div className="flex justify-around mb-8 bg-white/5 p-2 rounded-2xl border border-white/10">
+      {/* NAVIGATION */}
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-slate-900/90 backdrop-blur-2xl border border-slate-800 p-2 rounded-3xl flex justify-around items-center z-50 shadow-2xl">
         {[
           { id: 'home', icon: Activity },
           { id: 'journal', icon: Book },
@@ -85,81 +105,134 @@ export default function TimeCapsule() {
           <button 
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`p-3 rounded-xl transition-all ${activeTab === tab.id ? 'bg-red-600 text-white' : 'text-white/40'}`}
+            className={`p-4 rounded-2xl transition-all ${activeTab === tab.id ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-slate-500 hover:text-slate-300'}`}
           >
-            <tab.icon size={24} />
+            <tab.icon size={22} />
           </button>
         ))}
-      </div>
+      </nav>
 
-      {/* CONTENT AREA */}
-      <AnimatePresence mode="wait">
-        <motion.div 
-          key={activeTab}
-          initial={{ y: 10, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: -10, opacity: 0 }}
-          className="min-h-[400px]"
-        >
-          {activeTab === 'home' && (
-            <div className="space-y-6 text-center">
-              <div className="bg-gradient-to-br from-red-900/20 to-black p-12 rounded-3xl border border-red-500/20">
-                <Flame size={80} className="mx-auto text-red-500 mb-4 animate-pulse" />
-                <h2 className="text-4xl font-bold">{dbData.streak}</h2>
-                <p className="text-white/40 uppercase text-xs tracking-widest mt-2">Active_Streak</p>
+      <main className="p-6 max-w-lg mx-auto">
+        <AnimatePresence mode="wait">
+          <motion.div 
+            key={activeTab} 
+            initial={{ opacity: 0, y: 10 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            
+            {/* HUB / MOOD TAB */}
+            {activeTab === 'home' && (
+              <div className="space-y-8 py-10">
+                <div className="text-center">
+                  <p className="text-[10px] text-slate-500 uppercase tracking-[0.3em] mb-10">Shared_Status_Signal</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {MOODS.map((m) => (
+                      <button 
+                        key={m.id}
+                        onClick={() => updateMood(m.id)}
+                        className={`p-8 rounded-[2.5rem] border transition-all flex flex-col items-center gap-4 ${dbData.mood === m.id ? 'bg-slate-900 border-slate-700 shadow-xl' : 'bg-transparent border-slate-900 opacity-30 hover:opacity-100'}`}
+                      >
+                        <m.icon size={36} className={dbData.mood === m.id ? m.color : 'text-slate-600'} />
+                        <span className="text-[9px] uppercase font-black tracking-widest">{m.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {activeTab === 'journal' && (
-            <div className="bg-white/5 p-6 rounded-3xl border border-white/10">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-red-500 text-sm font-bold uppercase">Private_Log</h3>
-                <button onClick={() => isEditing ? saveJournalAndIncrementStreak() : setIsEditing(true)}>
-                  {isEditing ? <Save className="text-green-500" /> : <Edit3 className="text-white/40" />}
-                </button>
-              </div>
-              {isEditing ? (
-                <textarea 
-                  className="w-full h-40 bg-black border border-white/20 p-4 rounded-xl outline-none focus:border-red-500"
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                />
-              ) : (
-                <p className="text-lg leading-relaxed text-white/80 italic">"{dbData.content}"</p>
-              )}
-              <p className="text-[10px] text-white/20 mt-4 uppercase">Saving updates the streak automatically.</p>
-            </div>
-          )}
-
-          {activeTab === 'media' && (
-            <div className="space-y-4">
-              <div className="aspect-video bg-white/5 rounded-3xl border border-white/10 flex items-center justify-center overflow-hidden">
-                {dbData.mediaUrl ? (
-                  <video src={dbData.mediaUrl} controls className="w-full h-full object-cover" />
+            {/* LOG / JOURNAL TAB */}
+            {activeTab === 'journal' && (
+              <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Encrypted_Log</h3>
+                  <button onClick={() => isEditing ? saveJournal() : setIsEditing(true)} className="text-red-500 bg-slate-950 p-2 rounded-full border border-slate-800">
+                    {isEditing ? <Save size={20} /> : <Edit3 size={20} />}
+                  </button>
+                </div>
+                {isEditing ? (
+                  <textarea 
+                    className="w-full h-64 bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-red-600 text-slate-200" 
+                    value={newNote} 
+                    onChange={(e) => setNewNote(e.target.value)} 
+                  />
                 ) : (
-                  <p className="text-white/20 text-xs">NO_MEDIA_SYNCED</p>
+                  <p className="text-xl leading-relaxed italic text-slate-300 font-serif">"{dbData.content || "Silence is the only signal..."}"</p>
                 )}
+                <div className="mt-8 pt-6 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-600 uppercase tracking-widest font-black">
+                   <span className="flex items-center gap-2"><CheckCircle2 size={12} className="text-green-500"/> Secure</span>
+                   <span>Auto-Streak Active</span>
+                </div>
               </div>
-              <button className="w-full py-4 border-2 border-dashed border-white/10 rounded-3xl text-white/20 flex flex-col items-center hover:bg-white/5 transition-all">
-                <Upload size={24} className="mb-2" />
-                <span className="text-[10px] uppercase">Upload_New_Memory</span>
-              </button>
-            </div>
-          )}
+            )}
 
-          {activeTab === 'stats' && (
-            <div className="grid grid-cols-1 gap-4">
-              <div className="bg-white/5 p-6 rounded-3xl border border-white/10">
-                <p className="text-white/40 text-[10px] uppercase">Total_Days</p>
-                <p className="text-4xl font-bold mt-2">
-                  {Math.floor((new Date().getTime() - new Date("2025-10-13").getTime()) / (1000 * 60 * 60 * 24))}
-                </p>
+            {/* MEM / MEDIA TAB */}
+            {activeTab === 'media' && (
+              <div className="space-y-6">
+                <div className="aspect-square bg-slate-900 rounded-[2.5rem] border border-slate-800 overflow-hidden flex items-center justify-center relative shadow-inner">
+                  {dbData.mediaUrl ? (
+                    <video key={dbData.mediaUrl} src={dbData.mediaUrl} controls className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon size={48} className="text-slate-800 animate-pulse" />
+                  )}
+                </div>
+                
+                <label className="w-full py-12 border-2 border-dashed border-slate-800 rounded-[2.5rem] text-slate-500 flex flex-col items-center cursor-pointer hover:bg-slate-900/50 transition-all group overflow-hidden relative">
+                  {isUploading ? (
+                    <div className="text-center z-10">
+                      <div className="text-5xl font-black text-red-600 mb-2">{Math.round(uploadProgress)}%</div>
+                      <div className="text-[9px] uppercase tracking-widest font-bold">Transmitting_Data...</div>
+                      <div className="absolute bottom-0 left-0 h-2 bg-red-600 transition-all" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                  ) : (
+                    <>
+                      <Upload size={30} className="mb-3 group-hover:text-red-500 transition-colors" />
+                      <span className="text-[10px] uppercase font-black tracking-widest">Update Memory</span>
+                    </>
+                  )}
+                  <input type="file" className="hidden" disabled={isUploading} onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setIsUploading(true);
+                    const storageRef = ref(storage, `memories/${Date.now()}_${file.name}`);
+                    const uploadTask = uploadBytesResumable(storageRef, file);
+                    uploadTask.on('state_changed', 
+                      (s) => setUploadProgress((s.bytesTransferred / s.totalBytes) * 100),
+                      (err) => { console.error(err); setIsUploading(false); },
+                      async () => {
+                        const url = await getDownloadURL(uploadTask.snapshot.ref);
+                        await updateDoc(doc(db, "vault", "data"), { mediaUrl: url });
+                        setIsUploading(false);
+                        setUploadProgress(0);
+                      }
+                    );
+                  }} />
+                </label>
               </div>
-            </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
+            )}
+
+            {/* DATA / STATS TAB */}
+            {activeTab === 'stats' && (
+              <div className="grid grid-cols-1 gap-4">
+                <div className="bg-slate-900 p-10 rounded-[2.5rem] border border-slate-800 text-center">
+                  <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-4">Time_Elapsed</p>
+                  <p className="text-7xl font-black tracking-tighter tabular-nums">
+                    {Math.floor((new Date().getTime() - new Date("2025-10-13").getTime()) / (1000 * 60 * 60 * 24))}
+                  </p>
+                  <p className="text-[10px] text-slate-600 uppercase mt-4 tracking-widest font-bold">Days since start</p>
+                </div>
+              </div>
+            )}
+
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      <button onClick={() => setIsAuthorized(false)} className="fixed top-6 right-6 p-3 text-slate-700 hover:text-red-500 transition-colors">
+        <LogOut size={20} />
+      </button>
     </div>
   );
 }
