@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Activity, Flame, Lock, CheckCircle2, Edit3, Save, LogOut } from 'lucide-react';
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore, doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { getFirestore, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
 
-// --- PASTE YOUR ACTUAL FIREBASE CONFIG HERE ---
+//  FIREBASE CONFIG
 const firebaseConfig = {
   apiKey: "AIzaSyD3vYfhT9Ukphq2fVbNH5c9bGqGpcsd4sA",
   authDomain: "vault-final.firebaseapp.com",
