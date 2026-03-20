@@ -1,14 +1,16 @@
 "use client";
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Activity, Flame, Lock, Edit3, Save, LogOut, 
-  Image as ImageIcon, Book, BarChart3, Upload, 
-  Heart, Ghost, Coffee, Moon, CheckCircle2 // <--- ADD THIS
+  Activity, Flame, Book, BarChart3, Heart, Ghost, 
+  Coffee, Moon, CheckCircle2, Music, ExternalLink,
+  Edit3, Save, Image as ImageIcon 
 } from 'lucide-react';
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+// @ts-ignore
+import confetti from 'canvas-confetti';
 
 // --- FIREBASE CONFIG ---
 const firebaseConfig = {
@@ -22,7 +24,6 @@ const firebaseConfig = {
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const storage = getStorage(app);
 
 const MOODS = [
   { id: 'happy', icon: Heart, color: 'text-pink-500', label: 'Radiant' },
@@ -31,16 +32,28 @@ const MOODS = [
   { id: 'tired', icon: Coffee, color: 'text-orange-400', label: 'Tired' }
 ];
 
-export default function VaultFinal() {
+const Bubbles = () => (
+  <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    {[...Array(12)].map((_, i) => (
+      <div key={`bubble-${i}`} className="bubble" style={{
+        width: Math.random() * 25 + 10 + "px",
+        height: Math.random() * 25 + 10 + "px",
+        left: Math.random() * 100 + "%",
+        animation: `floatBubble ${Math.random() * 4 + 6}s linear ${Math.random() * 5}s infinite`
+      }} />
+    ))}
+  </div>
+);
+
+export default function VaultOS() {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
-  const [dbData, setDbData] = useState<any>({ content: "", streak: 0, mediaUrl: "", mood: "happy" });
+  const [dbData, setDbData] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [newNote, setNewNote] = useState("");
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
+  const [localNote, setLocalNote] = useState("");
+  const [localSecret, setLocalSecret] = useState("");
 
-  const SECRET_WORD = "Sacrifice";
+  const SECRET_WORD = "sacrifice";
 
   useEffect(() => {
     if (isAuthorized) {
@@ -48,191 +61,175 @@ export default function VaultFinal() {
         if (snap.exists()) {
           const data = snap.data();
           setDbData(data);
-          setNewNote(data.content || "");
+          if (!isEditing) setLocalNote(data.content || "");
         }
       });
       return () => unsubscribe();
     }
-  }, [isAuthorized]);
+  }, [isAuthorized, isEditing]);
 
-  const updateMood = async (moodId: string) => {
-    await updateDoc(doc(db, "vault", "data"), { mood: moodId });
-  };
-
-  const saveJournal = async () => {
+  const handleSaveJournal = async () => {
     await updateDoc(doc(db, "vault", "data"), { 
-      content: newNote,
-      streak: (dbData.streak || 0) + 1,
+      content: localNote, 
+      streak: (dbData?.streak || 0) + 1, 
       lastUpdated: serverTimestamp() 
     });
     setIsEditing(false);
+    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#dc2626', '#ffffff'] });
+  };
+
+  const handleSaveSecret = async (slot: string) => {
+    if (!localSecret.trim()) return;
+    await updateDoc(doc(db, "vault", "data"), { [slot]: localSecret });
+    setLocalSecret("");
+    confetti({ particleCount: 100, scalar: 0.75, shapes: ['circle'], colors: ['#22c55e', '#ffffff'] });
   };
 
   if (!isAuthorized) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 p-6">
-        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 2 }} className="text-red-600 mb-12">
-          <Activity size={80} />
+      <div className="flex flex-col items-center justify-center min-h-screen bg-black p-6">
+        <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2.5, repeat: Infinity }} className="text-red-600 mb-10">
+          <Activity size={60} />
         </motion.div>
         <input 
-          type="password" 
-          placeholder="OVERRIDE KEY" 
-          className="bg-transparent border-b border-slate-800 text-red-500 text-center outline-none w-48 tracking-widest uppercase py-2"
-          onChange={(e) => e.target.value.toLowerCase() === SECRET_WORD.toLowerCase() && setIsAuthorized(true)}
+          type="password" placeholder="ACCESS KEY" 
+          className="bg-transparent border-b border-zinc-800 text-red-500 text-center outline-none w-40 tracking-[0.3em] uppercase py-2 text-sm"
+          onChange={(e) => e.target.value.toLowerCase() === SECRET_WORD && setIsAuthorized(true)}
         />
       </div>
     );
   }
 
+  if (!dbData) return <div className="min-h-screen bg-black flex items-center justify-center text-zinc-500 font-mono text-xs uppercase tracking-widest">Initialising...</div>;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-32 selection:bg-red-500/30">
-      {/* HEADER */}
-      <header className="p-6 flex justify-between items-center border-b border-slate-900 sticky top-0 bg-slate-950/80 backdrop-blur-md z-50">
-        <h1 className="text-lg font-black italic text-red-600 tracking-tighter uppercase">Vault_OS.v3</h1>
-        <div className="flex items-center gap-2 text-slate-400 font-mono text-sm">
-           {dbData.streak} <Flame size={18} className={dbData.streak > 0 ? "text-orange-500" : "text-slate-800"} />
-        </div>
-      </header>
+    <div className="min-h-screen relative text-zinc-100 font-sans pb-32 overflow-x-hidden bg-slate-950">
+      
+      <div className="fixed inset-0 z-0 bg-cover bg-center transition-opacity duration-1000"
+        style={{ 
+          backgroundImage: activeTab === 'stats' ? "url('https://images.unsplash.com/photo-1594463750939-ebb28c3f5f53?q=80&w=2070&auto=format&fit=crop')" : 'none',
+          opacity: activeTab === 'stats' ? 0.4 : 0
+        }}
+      />
+      {activeTab === 'stats' && <Bubbles />}
 
-      {/* NAVIGATION */}
-      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-slate-900/90 backdrop-blur-2xl border border-slate-800 p-2 rounded-3xl flex justify-around items-center z-50 shadow-2xl">
-        {[
-          { id: 'home', icon: Activity },
-          { id: 'journal', icon: Book },
-          { id: 'media', icon: ImageIcon },
-          { id: 'stats', icon: BarChart3 }
-        ].map((tab) => (
-          <button 
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`p-4 rounded-2xl transition-all ${activeTab === tab.id ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-slate-500 hover:text-slate-300'}`}
-          >
-            <tab.icon size={22} />
-          </button>
-        ))}
-      </nav>
+      <div className="relative z-10">
+        <header className="p-6 flex justify-between items-center border-b border-white/5 sticky top-0 bg-slate-950/80 backdrop-blur-xl">
+          <h1 className="text-sm font-black italic text-red-600 tracking-tighter">VAULT_OS.v3</h1>
+          <div className="flex items-center gap-2 text-zinc-400 font-mono text-xs bg-white/5 px-3 py-1 rounded-full border border-white/5">
+            {dbData.streak} <Flame size={14} className={dbData.streak > 0 ? "text-orange-500" : ""} />
+          </div>
+        </header>
 
-      <main className="p-6 max-w-lg mx-auto">
-        <AnimatePresence mode="wait">
-          <motion.div 
-            key={activeTab} 
-            initial={{ opacity: 0, y: 10 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-          >
-            
-            {/* HUB / MOOD TAB */}
-            {activeTab === 'home' && (
-              <div className="space-y-8 py-10">
-                <div className="text-center">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-[0.3em] mb-10">Shared_Status_Signal</p>
-                  <div className="grid grid-cols-2 gap-4">
+        <main className="p-6 max-w-lg mx-auto">
+          <AnimatePresence mode="wait">
+            <motion.div key={activeTab} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
+              
+              {activeTab === 'home' && (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-3">
                     {MOODS.map((m) => (
-                      <button 
-                        key={m.id}
-                        onClick={() => updateMood(m.id)}
-                        className={`p-8 rounded-[2.5rem] border transition-all flex flex-col items-center gap-4 ${dbData.mood === m.id ? 'bg-slate-900 border-slate-700 shadow-xl' : 'bg-transparent border-slate-900 opacity-30 hover:opacity-100'}`}
-                      >
-                        <m.icon size={36} className={dbData.mood === m.id ? m.color : 'text-slate-600'} />
-                        <span className="text-[9px] uppercase font-black tracking-widest">{m.label}</span>
+                      <button key={m.id} onClick={() => updateDoc(doc(db, "vault", "data"), { mood: m.id })}
+                        className={`p-5 rounded-3xl border transition-all flex flex-col items-center gap-2 ${dbData.mood === m.id ? 'bg-zinc-900 border-zinc-700' : 'bg-transparent border-white/5 opacity-40'}`}>
+                        <m.icon size={24} className={dbData.mood === m.id ? m.color : ''} />
+                        <span className="text-[9px] font-bold uppercase tracking-widest">{m.label}</span>
                       </button>
                     ))}
                   </div>
-                </div>
-              </div>
-            )}
 
-            {/* LOG / JOURNAL TAB */}
-            {activeTab === 'journal' && (
-              <div className="bg-slate-900 p-6 rounded-[2.5rem] border border-slate-800">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Encrypted_Log</h3>
-                  <button onClick={() => isEditing ? saveJournal() : setIsEditing(true)} className="text-red-500 bg-slate-950 p-2 rounded-full border border-slate-800">
-                    {isEditing ? <Save size={20} /> : <Edit3 size={20} />}
-                  </button>
-                </div>
-                {isEditing ? (
-                  <textarea 
-                    className="w-full h-64 bg-slate-950 border border-slate-800 p-4 rounded-2xl outline-none focus:border-red-600 text-slate-200" 
-                    value={newNote} 
-                    onChange={(e) => setNewNote(e.target.value)} 
-                  />
-                ) : (
-                  <p className="text-xl leading-relaxed italic text-slate-300 font-serif">"{dbData.content || "Silence is the only signal..."}"</p>
-                )}
-                <div className="mt-8 pt-6 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-600 uppercase tracking-widest font-black">
-                   <span className="flex items-center gap-2"><CheckCircle2 size={12} className="text-green-500"/> Secure</span>
-                   <span>Auto-Streak Active</span>
-                </div>
-              </div>
-            )}
-
-            {/* MEM / MEDIA TAB */}
-            {activeTab === 'media' && (
-              <div className="space-y-6">
-                <div className="aspect-square bg-slate-900 rounded-[2.5rem] border border-slate-800 overflow-hidden flex items-center justify-center relative shadow-inner">
-                  {dbData.mediaUrl ? (
-                    <video key={dbData.mediaUrl} src={dbData.mediaUrl} controls className="w-full h-full object-cover" />
-                  ) : (
-                    <ImageIcon size={48} className="text-slate-800 animate-pulse" />
-                  )}
-                </div>
-                
-                <label className="w-full py-12 border-2 border-dashed border-slate-800 rounded-[2.5rem] text-slate-500 flex flex-col items-center cursor-pointer hover:bg-slate-900/50 transition-all group overflow-hidden relative">
-                  {isUploading ? (
-                    <div className="text-center z-10">
-                      <div className="text-5xl font-black text-red-600 mb-2">{Math.round(uploadProgress)}%</div>
-                      <div className="text-[9px] uppercase tracking-widest font-bold">Transmitting_Data...</div>
-                      <div className="absolute bottom-0 left-0 h-2 bg-red-600 transition-all" style={{ width: `${uploadProgress}%` }} />
+                  <div className={`p-6 rounded-[2.5rem] border transition-all ${dbData.streak % 7 === 0 && dbData.streak > 0 ? 'border-yellow-500/50 bg-yellow-500/5 shadow-2xl shadow-yellow-500/10' : 'border-white/5 bg-zinc-900/50'}`}>
+                    <div className="flex justify-between items-center mb-6 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                      <span>Weekly_Capsule</span>
+                      <span className="text-red-500 font-mono">{dbData.streak % 7}/7</span>
                     </div>
-                  ) : (
-                    <>
-                      <Upload size={30} className="mb-3 group-hover:text-red-500 transition-colors" />
-                      <span className="text-[10px] uppercase font-black tracking-widest">Update Memory</span>
-                    </>
-                  )}
-                  <input type="file" className="hidden" disabled={isUploading} onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    setIsUploading(true);
-                    const storageRef = ref(storage, `memories/${Date.now()}_${file.name}`);
-                    const uploadTask = uploadBytesResumable(storageRef, file);
-                    uploadTask.on('state_changed', 
-                      (s) => setUploadProgress((s.bytesTransferred / s.totalBytes) * 100),
-                      (err) => { console.error(err); setIsUploading(false); },
-                      async () => {
-                        const url = await getDownloadURL(uploadTask.snapshot.ref);
-                        await updateDoc(doc(db, "vault", "data"), { mediaUrl: url });
-                        setIsUploading(false);
-                        setUploadProgress(0);
-                      }
-                    );
-                  }} />
-                </label>
-              </div>
-            )}
-
-            {/* DATA / STATS TAB */}
-            {activeTab === 'stats' && (
-              <div className="grid grid-cols-1 gap-4">
-                <div className="bg-slate-900 p-10 rounded-[2.5rem] border border-slate-800 text-center">
-                  <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mb-4">Time_Elapsed</p>
-                  <p className="text-7xl font-black tracking-tighter tabular-nums">
-                    {Math.floor((new Date().getTime() - new Date("2025-10-13").getTime()) / (1000 * 60 * 60 * 24))}
-                  </p>
-                  <p className="text-[10px] text-slate-600 uppercase mt-4 tracking-widest font-bold">Days since start</p>
+                    
+                    {dbData.streak % 7 === 0 && dbData.streak > 0 ? (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5 text-sm italic">"{dbData.secret1 || "Partner 1 silent..."}"</div>
+                        <div className="p-4 bg-white/5 rounded-2xl border border-white/5 text-sm italic">"{dbData.secret2 || "Partner 2 silent..."}"</div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <textarea value={localSecret} onChange={(e) => setLocalSecret(e.target.value)} placeholder="Type a secret..." className="w-full bg-black/40 border border-white/5 p-4 rounded-2xl text-xs outline-none focus:border-red-500 h-24 resize-none" />
+                        <div className="flex gap-2">
+                          {!dbData.secret1 ? (
+                            <button onClick={() => handleSaveSecret('secret1')} className="flex-1 py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase">Save P1</button>
+                          ) : (
+                            <div className="flex-1 py-3 text-center text-[9px] text-green-500 font-black uppercase border border-green-500/20 rounded-xl flex items-center justify-center gap-1"><CheckCircle2 size={12}/> P1 Ready</div>
+                          )}
+                          {!dbData.secret2 ? (
+                            <button onClick={() => handleSaveSecret('secret2')} className="flex-1 py-3 bg-zinc-800 rounded-xl text-[9px] font-black uppercase">Save P2</button>
+                          ) : (
+                            <div className="flex-1 py-3 text-center text-[9px] text-green-500 font-black uppercase border border-green-500/20 rounded-xl flex items-center justify-center gap-1"><CheckCircle2 size={12}/> P2 Ready</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-          </motion.div>
-        </AnimatePresence>
-      </main>
+              {activeTab === 'journal' && (
+                <div className="bg-zinc-900/80 p-6 rounded-[2.5rem] border border-white/5">
+                  <div className="flex justify-between mb-6 items-center">
+                    <span className="text-[10px] text-zinc-500 font-black uppercase tracking-[0.2em]">Encrypted_Log</span>
+                    <button onClick={() => isEditing ? handleSaveJournal() : setIsEditing(true)} className="p-2 text-red-500 bg-black/50 rounded-full border border-white/5">
+                      {isEditing ? <Save size={18} /> : <Edit3 size={18} />}
+                    </button>
+                  </div>
+                  {isEditing ? (
+                    <textarea className="w-full h-72 bg-black/50 border border-white/10 p-4 rounded-2xl text-zinc-200 outline-none text-sm" value={localNote} onChange={(e) => setLocalNote(e.target.value)} />
+                  ) : (
+                    <p className="text-lg italic text-zinc-300 leading-relaxed font-serif">"{dbData.content || "..."}"</p>
+                  )}
+                </div>
+              )}
 
-      <button onClick={() => setIsAuthorized(false)} className="fixed top-6 right-6 p-3 text-slate-700 hover:text-red-500 transition-colors">
-        <LogOut size={20} />
-      </button>
+              {activeTab === 'stats' && (
+                <div className="space-y-6 pt-6">
+                  <div className="bg-yellow-400/10 backdrop-blur-md p-10 rounded-[3rem] border border-yellow-400/30 text-center shadow-xl relative overflow-hidden">
+                    <p className="text-yellow-500 text-[10px] font-black uppercase tracking-[0.4em] mb-4">Under_The_Sea</p>
+                    <p className="text-8xl font-black text-yellow-400 drop-shadow-lg" style={{ fontFamily: "'Jua', sans-serif" }}>
+                      {Math.floor((new Date().getTime() - new Date("2025-10-13").getTime()) / (1000 * 60 * 60 * 24))}
+                    </p>
+                  </div>
+                  <a href={dbData.playlistUrl || "#"} target="_blank" rel="noopener noreferrer" className="w-full p-6 bg-green-500/5 border border-green-500/20 rounded-3xl flex items-center justify-between group hover:bg-green-500/10 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-green-500 rounded-2xl text-black shadow-lg shadow-green-500/20"><Music size={20} /></div>
+                      <div className="text-left">
+                        <p className="text-[9px] font-black text-green-500 uppercase tracking-widest">Soundtrack</p>
+                        <p className="text-sm font-bold text-zinc-100">Our Shared Playlist</p>
+                      </div>
+                    </div>
+                    <ExternalLink size={16} className="text-green-500" />
+                  </a>
+                </div>
+              )}
+
+            </motion.div>
+          </AnimatePresence>
+        </main>
+
+        <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-zinc-900/90 backdrop-blur-2xl border border-white/10 p-2 rounded-[2rem] flex justify-around items-center z-50 shadow-2xl">
+          {[
+            { id: 'home', icon: Activity }, { id: 'journal', icon: Book }, { id: 'stats', icon: BarChart3 }
+          ].map((tab) => (
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id); setIsEditing(false); }} className={`p-4 rounded-2xl transition-all ${activeTab === tab.id ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'text-zinc-500 hover:text-zinc-300'}`}>
+              <tab.icon size={20} />
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      <style jsx global>{`
+        @keyframes floatBubble {
+          0% { transform: translateY(110vh); opacity: 0; }
+          20% { opacity: 0.4; }
+          100% { transform: translateY(-10vh); opacity: 0; }
+        }
+        .bubble { position: fixed; bottom: -50px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; pointer-events: none; z-index: 0; }
+        body { background-color: #020617; margin: 0; overflow-x: hidden; }
+      `}</style>
     </div>
   );
 }
